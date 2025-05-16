@@ -484,4 +484,4 @@ else:
     if len(st.session_state.points) == 2:
         st.warning("Không tìm thấy đường đi. Có thể do các đường bị cấm hoặc không có kết nối giữa hai điểm.")
 
-st.markdown("\n[bold yellow]Cảm ơn bạn đã sử dụng ứng dụng![/]")
+st.markdown("\nCảm ơn bạn đã sử dụng ứng dụng!")
