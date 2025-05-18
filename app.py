@@ -223,7 +223,7 @@ def find_shortest_path(G, start_point, end_point):
     end_node = ox.nearest_nodes(G, end_point[1], end_point[0])
     def weight_function(u, v, d):
         if is_segment_restricted(G, u, v, None):
-            return float('inf')
+            return None 
         return d.get('length', 1)
     try:
         route = nx.astar_path(G, start_node, end_node, weight=weight_function)
