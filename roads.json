@@ -1,0 +1,181 @@
+{
+    "Đống Đa": {
+        "Đường Láng": {
+            "start": [21.0123, 105.8034],
+            "end": [21.0133, 105.8234],
+            "description": "Đường Láng"
+        },
+        "Đường La Thành": {
+            "start": [21.0145, 105.8256],
+            "end": [21.0155, 105.8356],
+            "description": "Đường La Thành"
+        },
+        "Đường Tây Sơn": {
+            "start": [21.0167, 105.8278],
+            "end": [21.0177, 105.8478],
+            "description": "Đường Tây Sơn"
+        },
+        "Đường Trường Chinh": {
+            "start": [21.0189, 105.8290],
+            "end": [21.0199, 105.8390],
+            "description": "Đường Trường Chinh"
+        },
+        "Đường Giải Phóng": {
+            "start": [21.0201, 105.8312],
+            "end": [21.0211, 105.8412],
+            "description": "Đường Giải Phóng"
+        },
+        "Phố Xã Đàn": {
+            "start": [21.0223, 105.8334],
+            "end": [21.0233, 105.8434],
+            "description": "Phố Xã Đàn"
+        },
+        "Phố Chùa Bộc": {
+            "start": [21.0245, 105.8356],
+            "end": [21.0255, 105.8456],
+            "description": "Phố Chùa Bộc"
+        },
+        "Phố Thái Hà": {
+            "start": [21.0267, 105.8378],
+            "end": [21.0277, 105.8478],
+            "description": "Phố Thái Hà"
+        },
+        "Phố Khâm Thiên": {
+            "start": [21.0289, 105.8390],
+            "end": [21.0299, 105.8490],
+            "description": "Phố Khâm Thiên"
+        },
+        "Phố Tây Sơn": {
+            "start": [21.0301, 105.8412],
+            "end": [21.0311, 105.8512],
+            "description": "Phố Tây Sơn"
+        },
+        "Phố Lê Duẩn": {
+            "start": [21.0145, 105.8256],
+            "end": [21.0155, 105.8356],
+            "description": "Phố Lê Duẩn"
+        },
+        "Phố Nguyễn Lương Bằng": {
+            "start": [21.0223, 105.8334],
+            "end": [21.0233, 105.8434],
+            "description": "Phố Nguyễn Lương Bằng"
+        },
+        "Đường Láng Hạ": {
+            "start": [21.0245, 105.8356],
+            "end": [21.0255, 105.8456],
+            "description": "Đường Láng Hạ"
+        },
+        "Phố Hào Nam": {
+            "start": [21.0267, 105.8378],
+            "end": [21.0277, 105.8478],
+            "description": "Phố Hào Nam"
+        },
+        "Phố Quan Thổ": {
+            "start": [21.0289, 105.8390],
+            "end": [21.0299, 105.8490],
+            "description": "Phố Quan Thổ"
+        },
+        "Ngõ 158 Ngọc Hà": {
+            "start": [21.0301, 105.8412],
+            "end": [21.0311, 105.8512],
+            "description": "Ngõ 158 Ngọc Hà"
+        },
+        "Ngõ 168 Hào Nam": {
+            "start": [21.0323, 105.8434],
+            "end": [21.0333, 105.8534],
+            "description": "Ngõ 168 Hào Nam"
+        },
+        "Ngõ Quan Thổ 1": {
+            "start": [21.0345, 105.8456],
+            "end": [21.0355, 105.8556],
+            "description": "Ngõ Quan Thổ 1"
+        },
+        "Ngõ Cẩm Vân": {
+            "start": [21.0367, 105.8478],
+            "end": [21.0377, 105.8578],
+            "description": "Ngõ Cẩm Vân"
+        }
+    },
+    "Ba Đình": {
+        "Đường Nguyễn Chí Thanh": {
+            "start": [21.0323, 105.8034],
+            "end": [21.0333, 105.8234],
+            "description": "Đường Nguyễn Chí Thanh"
+        },
+        "Đường Hoàng Hoa Thám": {
+            "start": [21.0345, 105.8256],
+            "end": [21.0355, 105.8356],
+            "description": "Đường Hoàng Hoa Thám"
+        },
+        "Đường Bưởi": {
+            "start": [21.0367, 105.8278],
+            "end": [21.0377, 105.8478],
+            "description": "Đường Bưởi"
+        },
+        "Đường Thanh Niên": {
+            "start": [21.0389, 105.8290],
+            "end": [21.0399, 105.8390],
+            "description": "Đường Thanh Niên"
+        },
+        "Đường Điện Biên Phủ": {
+            "start": [21.0401, 105.8312],
+            "end": [21.0411, 105.8412],
+            "description": "Đường Điện Biên Phủ"
+        },
+        "Phố Kim Mã": {
+            "start": [21.0423, 105.8334],
+            "end": [21.0433, 105.8434],
+            "description": "Phố Kim Mã"
+        },
+        "Phố Giảng Võ": {
+            "start": [21.0445, 105.8356],
+            "end": [21.0455, 105.8456],
+            "description": "Phố Giảng Võ"
+        },
+        "Phố Liễu Giai": {
+            "start": [21.0467, 105.8378],
+            "end": [21.0477, 105.8478],
+            "description": "Phố Liễu Giai"
+        },
+        "Phố Đội Cấn": {
+            "start": [21.0489, 105.8390],
+            "end": [21.0499, 105.8490],
+            "description": "Phố Đội Cấn"
+        },
+        "Phố Ngọc Hà": {
+            "start": [21.0501, 105.8412],
+            "end": [21.0511, 105.8512],
+            "description": "Phố Ngọc Hà"
+        },
+        "Phố Phan Đình Phùng": {
+            "start": [21.0523, 105.8634],
+            "end": [21.0533, 105.8734],
+            "description": "Phố Phan Đình Phùng"
+        },
+        "Phố Giang Văn Minh": {
+            "start": [21.0545, 105.8656],
+            "end": [21.0555, 105.8756],
+            "description": "Phố Giang Văn Minh"
+        },
+        "Phố Đội Nhân": {
+            "start": [21.0567, 105.8678],
+            "end": [21.0577, 105.8778],
+            "description": "Phố Đội Nhân"
+        },
+        "Ngõ 316 Đê La Thành": {
+            "start": [21.0589, 105.8690],
+            "end": [21.0599, 105.8790],
+            "description": "Ngõ 316 Đê La Thành"
+        },
+        "Ngõ 12 Ngọc Hà": {
+            "start": [21.0601, 105.8712],
+            "end": [21.0611, 105.8812],
+            "description": "Ngõ 12 Ngọc Hà"
+        },
+        "Ngõ 8 Đội Cấn": {
+            "start": [21.0623, 105.8734],
+            "end": [21.0633, 105.8834],
+            "description": "Ngõ 8 Đội Cấn"
+        }
+    }
+} 
