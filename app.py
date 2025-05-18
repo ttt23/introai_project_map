@@ -4,13 +4,14 @@ import folium
 from streamlit_folium import st_folium
 import networkx as nx
 import os
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiLineString
 import math
 import json
 import requests
+from folium.plugins import MarkerCluster
 
-st.set_page_config(page_title="Bản đồ chỉ đường Đống Đa - Ba Đình", layout="wide")
-st.title("Bản đồ chỉ đường Đống Đa - Ba Đình")
+st.set_page_config(page_title="Bản đồ chỉ đường Giảng Võ - Ba Đình", layout="wide")
+st.title("Bản đồ chỉ đường Giảng Võ - Ba Đình")
 
 CENTER = [21.0285, 105.8342]
 
@@ -108,20 +109,28 @@ if 'suggested_roads' not in st.session_state:
 if 'suggested_roads_selected' not in st.session_state:
     st.session_state.suggested_roads_selected = set()
 
+# 1. Khởi tạo trạng thái
+if 'show_nodes' not in st.session_state:
+    st.session_state.show_nodes = False
+
+# 1. Thêm biến trạng thái
+if 'show_edges' not in st.session_state:
+    st.session_state.show_edges = False
+
 # --- KẾT THÚC KHỞI TẠO SESSION STATE ---
 
 @st.cache_data
 def load_map_data():
-    if os.path.exists("dongda_ba_dinh.graphml"):
+    if os.path.exists("giang_vo_ba_dinh.graphml"):
         st.write("Đang tải dữ liệu bản đồ từ file...")
-        G = ox.load_graphml("dongda_ba_dinh.graphml")
+        G = ox.load_graphml("giang_vo_ba_dinh.graphml")
     else:
         st.write("Đang tải dữ liệu bản đồ từ OSM...")
         G = ox.graph_from_place(
-            ["Đống Đa, Hà Nội", "Ba Đình, Hà Nội"],
-            network_type="walk"
+            ["Giảng Võ, Ba Đình, Hà Nội"],
+            network_type="all"
         )
-        ox.save_graphml(G, "dongda_ba_dinh.graphml")
+        ox.save_graphml(G, "giang_vo_ba_dinh.graphml")
     st.write("Đã tải xong dữ liệu bản đồ!")
     return G
 
@@ -222,15 +231,19 @@ def find_shortest_path(G, start_point, end_point):
     except nx.NetworkXNoPath:
         return None
 
-def find_nearest_roads(G, point, num_roads=5, max_distance=0.002):
+def find_nearest_roads(G, point, num_roads=20, max_distance=0.002):
     """Tìm num_roads tuyến đường gần nhất với điểm cho trước (max_distance ~200m)."""
     lon, lat = point
     nearest_edges = []
     pt = Point(lon, lat)
     for u, v, k, data in G.edges(data=True, keys=True):
         if 'geometry' in data:
-            line = data['geometry']
-            distance = line.distance(pt)
+            geom = data['geometry']
+            if isinstance(geom, MultiLineString):
+                # Tính khoảng cách nhỏ nhất từ điểm tới từng LineString con
+                distance = min(line.distance(pt) for line in geom.geoms)
+            else:
+                distance = geom.distance(pt)
             if distance <= max_distance:
                 nearest_edges.append({
                     'u': u,
@@ -242,7 +255,7 @@ def find_nearest_roads(G, point, num_roads=5, max_distance=0.002):
     nearest_edges.sort(key=lambda x: x['distance'])
     return nearest_edges[:num_roads]
 
-def create_map(G, points=None, route=None, suggested_roads=None):
+def create_map(G, points=None, route=None, suggested_roads=None, show_nodes=False, show_edges=False):
     m = folium.Map(location=CENTER, zoom_start=14)
     # Vẽ các tuyến đường gợi ý (nếu có)
     if suggested_roads:
@@ -308,16 +321,44 @@ def create_map(G, points=None, route=None, suggested_roads=None):
     if route:
         route_coords = [[G.nodes[n]['y'], G.nodes[n]['x']] for n in route]
         folium.PolyLine(route_coords, weight=5, color='blue', opacity=0.9).add_to(m)
+    # Thêm marker cho tất cả node nếu show_nodes=True
+    if show_nodes:
+        for node_id, data in G.nodes(data=True):
+            lat = data['y']
+            lon = data['x']
+            folium.Marker(
+                [lat, lon],
+                icon=folium.Icon(color='blue', icon='info-sign'),
+                popup=f"Node {node_id}"
+            ).add_to(m)
+    # Thêm tất cả các tuyến đường nếu show_edges
+    if show_edges:
+        for u, v, data in G.edges(data=True):
+            if 'geometry' in data:
+                geom = data['geometry']
+                if hasattr(geom, 'coords'):
+                    coords = [(y, x) for x, y in geom.coords]
+                    folium.PolyLine(coords, color='blue', weight=3, opacity=0.7).add_to(m)
     return m
 
 with st.sidebar:
+    st.header("Hiển thị node/path")
+    #  Thêm check box sidebar
+    st.session_state.show_nodes = st.sidebar.checkbox(
+    "Hiển thị node", 
+    value=st.session_state.show_nodes
+    )
+    st.session_state.show_edges = st.sidebar.checkbox(
+        "Hiển thị path", 
+        value=st.session_state.show_edges
+    )
     st.header("Quản lý đoạn đường bị cấm")
 
-    st.subheader("Cấm đường bằng Click")
+    # st.subheader("Cấm đường bằng Click")
     # Nút kích hoạt chế độ sẽ được đọc giá trị từ session_state
     # và khi thay đổi sẽ tự động cập nhật session_state nhờ key
     st.session_state.ban_by_click_mode = st.checkbox(
-        "Kích hoạt Chế độ Cấm đường bằng Click", 
+        "Kích hoạt chế độ cấm đường bằng Click", 
         value=st.session_state.get('ban_by_click_mode', False), 
         key="cb_ban_by_click_mode_state"
     )
@@ -425,22 +466,41 @@ with st.sidebar:
                 st.session_state.pop(f"cb_suggested_{idx}", None)
             st.rerun()
 
+    # # 2. Thêm nút vào sidebar
+    # if st.button("Ẩn/Hiện marker node"):
+    #     st.session_state.show_nodes = not st.session_state.show_nodes
+    # # st.write(f"Hiển thị marker node: {'Bật' if st.session_state.show_nodes else 'Tắt'}")
+
 G = load_map_data()
-places = ["Đống Đa, Hà Nội", "Ba Đình, Hà Nội"]
+places = ["Giảng Võ, Ba Đình, Hà Nội"]
 try:
     gdf_districts = ox.geocode_to_gdf(places)
-    districts_polygon = gdf_districts.unary_union
+    districts_polygon = gdf_districts.iloc[0]['geometry']
 except Exception as e:
-    st.error(f"Không thể tải polygon cho các quận: {e}")
+    st.error(f"Không thể tải polygon cho phường Giảng Võ: {e}")
     districts_polygon = None
 
 route = None
-m = create_map(G, st.session_state.points, route, st.session_state.suggested_roads)
+m = create_map(
+    G, 
+    st.session_state.points, 
+    route, 
+    st.session_state.suggested_roads, 
+    show_nodes=st.session_state.show_nodes,
+    show_edges=st.session_state.show_edges
+)
 
 if len(st.session_state.points) == 2:
     start_point_coords, end_point_coords = st.session_state.points
     route = find_shortest_path(G, start_point_coords, end_point_coords)
-    m = create_map(G, st.session_state.points, route, st.session_state.suggested_roads)
+    m = create_map(
+        G, 
+        st.session_state.points, 
+        route, 
+        st.session_state.suggested_roads, 
+        show_nodes=st.session_state.show_nodes,
+        show_edges=st.session_state.show_edges
+    )
 
 map_data = st_folium(m, width=1200, height=600)
 
@@ -455,17 +515,17 @@ if map_data and map_data['last_clicked']:
         st.rerun()
     else:
         if districts_polygon and districts_polygon.contains(clicked_point_geom):
-            st.info("✅ Điểm bạn chọn hợp lệ trong phạm vi 2 quận.")
+            st.info("✅ Điểm bạn chọn hợp lệ trong phạm vi phường Giảng Võ.")
             if len(st.session_state.points) < 2:
                 st.session_state.points.append((lat, lon))
                 st.rerun()
         elif not districts_polygon:
-             st.warning("Không thể xác thực điểm nằm trong quận do lỗi tải polygon. Tạm thời chấp nhận điểm.")
+             st.warning("Không thể xác thực điểm nằm trong phường do lỗi tải polygon. Tạm thời chấp nhận điểm.")
              if len(st.session_state.points) < 2:
                 st.session_state.points.append((lat, lon))
                 st.rerun()
         else:
-            st.error("❌ Điểm bạn chọn nằm ngoài phạm vi quận Đống Đa hoặc Ba Đình! Vui lòng chọn lại.")
+            st.error("❌ Điểm bạn chọn nằm ngoài phạm vi phường Giảng Võ! Vui lòng chọn lại.")
 
 if st.session_state.clicked_banned_osm_ids:
     st.info(f"Đang cấm bằng click: {len(st.session_state.clicked_banned_osm_ids)} OSM IDs")
