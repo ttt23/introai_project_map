@@ -14,7 +14,11 @@ from geopy.distance import geodesic
 st.set_page_config(page_title="Bản đồ chỉ đường Giảng Võ - Ba Đình", layout="wide")
 st.title("Bản đồ chỉ đường Giảng Võ - Ba Đình")
 
-CENTER = [21.0285, 105.8342]
+# Cập nhật vị trí trung tâm chính xác hơn cho phường Giảng Võ
+CENTER = [21.0286, 105.8232]  # Vị trí trung tâm Hồ Giảng Võ
+
+# Tạo danh sách các địa điểm quan trọng trong phường Giảng Võ
+# Xóa danh sách LANDMARKS theo yêu cầu
 
 def meters_to_degrees(meters):
     # 1 độ ~ 111_320 mét (ở xích đạo), dùng gần đúng cho Hà Nội
@@ -30,6 +34,21 @@ def is_point_in_circle(point, circle_center, radius_m):
 def load_roads():
     with open('roads.json', 'r', encoding='utf-8') as f:
         return json.load(f)
+
+@st.cache_data
+def load_map_data():
+    if os.path.exists("giang_vo_ba_dinh.graphml"):
+        st.write("Đang tải dữ liệu bản đồ từ file...")
+        G = ox.load_graphml("giang_vo_ba_dinh.graphml")
+    else:
+        st.write("Đang tải dữ liệu bản đồ từ OSM...")
+        G = ox.graph_from_place(
+            ["Giảng Võ, Ba Đình, Hà Nội"],
+            network_type="all"
+        )
+        ox.save_graphml(G, "giang_vo_ba_dinh.graphml")
+    st.write("Đã tải xong dữ liệu bản đồ!")
+    return G
 
 roads = load_roads()
 
@@ -114,6 +133,20 @@ if 'pending_ban_edge_info' not in st.session_state: # Thông tin của cạnh đ
     st.session_state.pending_ban_edge_info = None 
     # Sẽ lưu dạng: {'osmid': ..., 'geometry': ..., 'name': ..., 'length': ..., 'u': ..., 'v': ..., 'key': ...}
 
+# Session state cho tính năng cấm đường theo node
+if 'ban_by_node_mode' not in st.session_state:
+    st.session_state.ban_by_node_mode = False
+if 'selected_nodes' not in st.session_state:
+    st.session_state.selected_nodes = []
+if 'current_node' not in st.session_state:
+    st.session_state.current_node = None
+if 'adjacent_nodes' not in st.session_state:
+    st.session_state.adjacent_nodes = []
+if 'banned_edges_by_nodes' not in st.session_state:
+    st.session_state.banned_edges_by_nodes = set()
+if 'banned_osmids_by_nodes' not in st.session_state:
+    st.session_state.banned_osmids_by_nodes = set()
+
 if 'suggested_roads' not in st.session_state:
     st.session_state.suggested_roads = []
 
@@ -153,7 +186,7 @@ if ban_mode_changed and not current_ban_by_circle_mode:
 
 # Thêm input nhập bán kính và checkbox bật chế độ cấm theo vùng tròn ở sidebar
 with st.sidebar:
-    st.header("Hiển thị node/path")
+    st.header("Hiển thị")
     #  Thêm check box sidebar
     st.session_state.show_nodes = st.sidebar.checkbox(
     "Hiển thị node", 
@@ -163,7 +196,88 @@ with st.sidebar:
         "Hiển thị path", 
         value=st.session_state.show_edges
     )
+    
     st.header("Quản lý đoạn đường bị cấm")
+    
+    # Thêm phần cấm đường theo node
+    st.subheader("Cấm đường theo node")
+    st.session_state.ban_by_node_mode = st.checkbox(
+        "Kích hoạt chế độ cấm theo node", 
+        value=st.session_state.get('ban_by_node_mode', False),
+        key="cb_ban_by_node_mode"
+    )
+    
+    # Hiển thị thông tin về các node đã chọn
+    if st.session_state.ban_by_node_mode:
+        if st.session_state.selected_nodes:
+            st.write(f"Đã chọn {len(st.session_state.selected_nodes)} node")
+            
+            if len(st.session_state.selected_nodes) >= 2:
+                if st.button("Cấm dãy node đã chọn", key="ban_selected_nodes"):
+                    # Lưu các cạnh giữa các node liền kề trong dãy
+                    G = load_map_data()  # Đảm bảo G đã được tải
+                    
+                    # Tìm đường đi ngắn nhất giữa các node liên tiếp để đảm bảo đường cấm được kín
+                    for i in range(len(st.session_state.selected_nodes) - 1):
+                        u = st.session_state.selected_nodes[i]
+                        v = st.session_state.selected_nodes[i + 1]
+                        
+                        # Kiểm tra xem có đường đi trực tiếp giữa u và v không
+                        if G.has_edge(u, v):
+                            # Cấm tất cả các cạnh trực tiếp giữa u và v
+                            for k, data in G[u][v].items():
+                                st.session_state.banned_edges_by_nodes.add((u, v, k))
+                                osmid = data.get('osmid')
+                                if isinstance(osmid, list):
+                                    for oid in osmid:
+                                        st.session_state.banned_osmids_by_nodes.add(oid)
+                                        st.session_state.clicked_banned_osm_ids.add(oid)
+                                else:
+                                    st.session_state.banned_osmids_by_nodes.add(osmid)
+                                    st.session_state.clicked_banned_osm_ids.add(osmid)
+                        else:
+                            # Nếu không có đường trực tiếp, tìm đường đi ngắn nhất giữa u và v
+                            try:
+                                path = nx.shortest_path(G, u, v, weight='length')
+                                # Cấm tất cả các cạnh trên đường đi
+                                for j in range(len(path) - 1):
+                                    path_u = path[j]
+                                    path_v = path[j + 1]
+                                    for k, data in G[path_u][path_v].items():
+                                        st.session_state.banned_edges_by_nodes.add((path_u, path_v, k))
+                                        osmid = data.get('osmid')
+                                        if isinstance(osmid, list):
+                                            for oid in osmid:
+                                                st.session_state.banned_osmids_by_nodes.add(oid)
+                                                st.session_state.clicked_banned_osm_ids.add(oid)
+                                        else:
+                                            st.session_state.banned_osmids_by_nodes.add(osmid)
+                                            st.session_state.clicked_banned_osm_ids.add(osmid)
+                            except nx.NetworkXNoPath:
+                                st.warning(f"Không tìm thấy đường đi giữa node {u} và {v}")
+                    
+                    st.toast(f"🚫 Đã cấm {len(st.session_state.banned_edges_by_nodes)} đoạn đường giữa các node!", icon="🚫")
+                    st.session_state.selected_nodes = []
+                    st.session_state.current_node = None
+                    st.session_state.adjacent_nodes = []
+                    st.rerun()
+            
+            if st.button("Xóa lựa chọn", key="clear_selected_nodes"):
+                st.session_state.selected_nodes = []
+                st.session_state.current_node = None
+                st.session_state.adjacent_nodes = []
+                st.rerun()
+        
+        # Hiển thị các đoạn đã cấm theo node
+        if st.session_state.banned_osmids_by_nodes:
+            st.write(f"**Đã cấm {len(st.session_state.banned_osmids_by_nodes)} OSM ID(s) bằng node.**")
+            if st.button("Xóa các đường đã cấm bằng Node", key="clear_node_bans_btn"):
+                # Xóa khỏi danh sách cấm chính
+                st.session_state.clicked_banned_osm_ids.difference_update(st.session_state.banned_osmids_by_nodes)
+                st.session_state.banned_edges_by_nodes = set()
+                st.session_state.banned_osmids_by_nodes = set()
+                st.toast("✅ Đã xóa tất cả các đường cấm bằng node!", icon="✅")
+                st.rerun()
 
     # st.subheader("Cấm đường bằng Click")
     # Nút kích hoạt chế độ sẽ được đọc giá trị từ session_state
@@ -289,21 +403,6 @@ with st.sidebar:
 
 # --- KẾT THÚC KHỞI TẠO SESSION STATE ---
 
-@st.cache_data
-def load_map_data():
-    if os.path.exists("giang_vo_ba_dinh.graphml"):
-        st.write("Đang tải dữ liệu bản đồ từ file...")
-        G = ox.load_graphml("giang_vo_ba_dinh.graphml")
-    else:
-        st.write("Đang tải dữ liệu bản đồ từ OSM...")
-        G = ox.graph_from_place(
-            ["Giảng Võ, Ba Đình, Hà Nội"],
-            network_type="all"
-        )
-        ox.save_graphml(G, "giang_vo_ba_dinh.graphml")
-    st.write("Đã tải xong dữ liệu bản đồ!")
-    return G
-
 def add_restricted_segment(G, start_point, end_point, description):
     start_node = ox.nearest_nodes(G, start_point[1], start_point[0])
     end_node = ox.nearest_nodes(G, end_point[1], end_point[0])
@@ -323,8 +422,16 @@ def is_segment_restricted(G, u, v, k=None):
             return True
     banned_by_click = st.session_state.get('clicked_banned_osm_ids', set())
     banned_edges_by_circle = st.session_state.get('banned_edges_by_circle', set())
+    banned_edges_by_nodes = st.session_state.get('banned_edges_by_nodes', set())
+    
+    # Kiểm tra cạnh có bị cấm bởi node không
+    if k is not None and (u, v, k) in banned_edges_by_nodes:
+        return True
+        
+    # Kiểm tra cạnh có bị cấm bởi vùng tròn không
     if k is not None and (u, v, k) in banned_edges_by_circle:
         return True
+        
     edge_data = G.get_edge_data(u, v)
     if edge_data:
         actual_edge_data = edge_data[0] if isinstance(edge_data, dict) and 0 in edge_data else edge_data
@@ -398,8 +505,22 @@ def find_shortest_path(G, start_point, end_point):
     # Xóa tất cả các edge bị cấm (trong vùng cấm) khỏi graph tạm thời
     edges_to_remove = []
     for u, v, k, data in G.edges(data=True, keys=True):
+        # Kiểm tra các cạnh bị cấm theo vùng tròn
         if data.get('banned_by_circle', False) or (u, v, k) in st.session_state.get('banned_edges_by_circle', set()):
             edges_to_remove.append((u, v, k))
+        
+        # Kiểm tra các cạnh bị cấm theo node
+        if (u, v, k) in st.session_state.get('banned_edges_by_nodes', set()):
+            edges_to_remove.append((u, v, k))
+        
+        # Kiểm tra các cạnh bị cấm theo OSM ID
+        osmid = data.get('osmid')
+        if osmid:
+            if isinstance(osmid, list):
+                if any(oid in st.session_state.clicked_banned_osm_ids for oid in osmid):
+                    edges_to_remove.append((u, v, k))
+            elif osmid in st.session_state.clicked_banned_osm_ids:
+                edges_to_remove.append((u, v, k))
     
     for u, v, k in edges_to_remove:
         if G_copy.has_edge(u, v, k):
@@ -440,7 +561,26 @@ def find_nearest_roads(G, point, num_roads=20, max_distance=0.002):
     return nearest_edges[:num_roads]
 
 def create_map(G, points=None, route=None, suggested_roads=None, show_nodes=False, show_edges=False, circle_ban_center=None, circle_ban_radius=None):
-    m = folium.Map(location=CENTER, zoom_start=14)
+    m = folium.Map(location=CENTER, zoom_start=15)
+    
+    # Vẽ ranh giới phường Giảng Võ rõ ràng, không fill, không hiệu ứng
+    if 'districts_polygon' in globals() and districts_polygon is not None:
+        district_coords = []
+        if hasattr(districts_polygon, 'exterior'):
+            district_coords = [(y, x) for x, y in districts_polygon.exterior.coords]
+        elif hasattr(districts_polygon, 'geoms'):
+            district_coords = [(y, x) for x, y in list(districts_polygon.geoms)[0].exterior.coords]
+        
+        if district_coords:
+            folium.PolyLine(
+                locations=district_coords,
+                color='green',
+                weight=4,
+                opacity=1,
+                dash_array='5, 10',
+                popup="Ranh giới phường Giảng Võ"
+            ).add_to(m)
+    
     # Vẽ các tuyến đường gợi ý (nếu có)
     if suggested_roads:
         # Lọc các tuyến chưa bị cấm
@@ -468,21 +608,50 @@ def create_map(G, points=None, route=None, suggested_roads=None, show_nodes=Fals
                 opacity=0.8,
                 popup=f"{order+1}. {data.get('name', 'Đường không tên')}"
             ).add_to(m)
+            
+    # Vẽ các cạnh đã bị cấm bởi node (màu đỏ đậm)
+    if st.session_state.banned_edges_by_nodes:
+        for u, v, k in st.session_state.banned_edges_by_nodes:
+            if G.has_edge(u, v, k):
+                data = G[u][v][k]
+                if 'geometry' in data:
+                    coords = [(coord[1], coord[0]) for coord in data['geometry'].coords]
+                    folium.PolyLine(coords, weight=7, color='darkred', opacity=0.9,
+                                    popup=f"Đã cấm bằng node (OSM ID: {data.get('osmid', 'N/A')})").add_to(m)
+                else:
+                    # Nếu không có geometry, vẽ đường thẳng
+                    u_lat, u_lon = G.nodes[u]['y'], G.nodes[u]['x']
+                    v_lat, v_lon = G.nodes[v]['y'], G.nodes[v]['x']
+                    folium.PolyLine([[u_lat, u_lon], [v_lat, v_lon]], 
+                                    weight=7, color='darkred', opacity=0.9,
+                                    popup=f"Đã cấm bằng node (OSM ID: {data.get('osmid', 'N/A')})").add_to(m)
+    
     # 1. Vẽ các cạnh đã bị cấm chính thức (màu tím)
     if st.session_state.clicked_banned_osm_ids:
         for u_b, v_b, data_b in G.edges(data=True):
             osmid_b = data_b.get('osmid')
             is_officially_banned = False
+            is_banned_by_node = False
+            
+            # Kiểm tra xem đoạn đường này có bị cấm không
             if osmid_b:
                 if isinstance(osmid_b, list):
                     if any(oid in st.session_state.clicked_banned_osm_ids for oid in osmid_b):
                         is_officially_banned = True
+                        # Kiểm tra xem có bị cấm bởi node không
+                        if any(oid in st.session_state.banned_osmids_by_nodes for oid in osmid_b):
+                            is_banned_by_node = True
                 elif osmid_b in st.session_state.clicked_banned_osm_ids:
                     is_officially_banned = True
-            if is_officially_banned and 'geometry' in data_b:
+                    if osmid_b in st.session_state.banned_osmids_by_nodes:
+                        is_banned_by_node = True
+            
+            # Chỉ vẽ các đoạn không phải bị cấm bởi node (vì đã vẽ ở trên)
+            if is_officially_banned and not is_banned_by_node and 'geometry' in data_b:
                 coords_b = [(coord[1], coord[0]) for coord in data_b['geometry'].coords]
                 folium.PolyLine(coords_b, weight=6, color='purple', opacity=0.8, 
                                 popup=f"Đã cấm (OSM ID(s): {osmid_b})").add_to(m)
+                
     # 2. Vẽ đoạn đang chờ xác nhận cấm (màu vàng)
     if st.session_state.pending_ban_edge_info:
         pending_info = st.session_state.pending_ban_edge_info
@@ -497,6 +666,108 @@ def create_map(G, points=None, route=None, suggested_roads=None, show_nodes=Fals
                 coords_pending = [(coord[1], coord[0]) for coord in pending_info['geometry'].coords]
                 folium.PolyLine(coords_pending, weight=7, color='yellow', opacity=0.9,
                                 popup=f"Đang chọn để cấm: {pending_info.get('name', '')} (OSM: {pending_info.get('osmid', '')})").add_to(m)
+    
+    # Vẽ các node và đường nối cho tính năng cấm theo node
+    if st.session_state.ban_by_node_mode:
+        # Vẽ tất cả các node nếu chưa chọn node nào
+        if not st.session_state.selected_nodes:
+            for node_id, data in G.nodes(data=True):
+                lat = data['y']
+                lon = data['x']
+                folium.CircleMarker(
+                    [lat, lon],
+                    radius=5,
+                    color='blue',
+                    fill=True,
+                    fill_color='blue',
+                    fill_opacity=0.7,
+                    popup=f"Node {node_id}",
+                    tooltip=f"Node {node_id}"
+                ).add_to(m)
+        
+        # Vẽ các node đã chọn
+        for i, node_id in enumerate(st.session_state.selected_nodes):
+            node_data = G.nodes[node_id]
+            lat = node_data['y']
+            lon = node_data['x']
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                color='red',
+                fill=True,
+                fill_color='red',
+                fill_opacity=0.7,
+                popup=f"Node {node_id} (Đã chọn {i+1})",
+                tooltip=f"Node {node_id} (Đã chọn {i+1})"
+            ).add_to(m)
+            
+            # Vẽ đường nối giữa các node đã chọn
+            if i > 0:
+                prev_node_id = st.session_state.selected_nodes[i-1]
+                prev_node_data = G.nodes[prev_node_id]
+                prev_lat = prev_node_data['y']
+                prev_lon = prev_node_data['x']
+                
+                # Kiểm tra xem có cạnh trực tiếp giữa hai node không
+                if G.has_edge(prev_node_id, node_id):
+                    # Lấy dữ liệu của cạnh
+                    edge_data = G.get_edge_data(prev_node_id, node_id)
+                    if edge_data:
+                        # Nếu có nhiều cạnh giữa hai node, lấy cạnh đầu tiên
+                        key = list(edge_data.keys())[0]
+                        data = edge_data[key]
+                        
+                        # Nếu có geometry, vẽ theo geometry
+                        if 'geometry' in data:
+                            coords = [(coord[1], coord[0]) for coord in data['geometry'].coords]
+                            folium.PolyLine(coords, weight=5, color='green', opacity=0.9,
+                                           popup=f"Đường nối đã chọn").add_to(m)
+                        else:
+                            # Nếu không có geometry, vẽ đường thẳng
+                            folium.PolyLine([[prev_lat, prev_lon], [lat, lon]], 
+                                           weight=5, color='green', opacity=0.9,
+                                           popup=f"Đường nối đã chọn").add_to(m)
+        
+        # Vẽ các node liền kề với node cuối cùng đã chọn
+        if st.session_state.selected_nodes and st.session_state.adjacent_nodes:
+            current_node_id = st.session_state.selected_nodes[-1]
+            current_node_data = G.nodes[current_node_id]
+            current_lat = current_node_data['y']
+            current_lon = current_node_data['x']
+            
+            for adj_node_id in st.session_state.adjacent_nodes:
+                adj_node_data = G.nodes[adj_node_id]
+                adj_lat = adj_node_data['y']
+                adj_lon = adj_node_data['x']
+                
+                # Vẽ node liền kề
+                folium.CircleMarker(
+                    [adj_lat, adj_lon],
+                    radius=6,
+                    color='orange',
+                    fill=True,
+                    fill_color='orange',
+                    fill_opacity=0.7,
+                    popup=f"Node {adj_node_id} (Liền kề)",
+                    tooltip=f"Node {adj_node_id} (Liền kề)"
+                ).add_to(m)
+                
+                # Vẽ đường nối đến node liền kề
+                if G.has_edge(current_node_id, adj_node_id):
+                    edge_data = G.get_edge_data(current_node_id, adj_node_id)
+                    if edge_data:
+                        key = list(edge_data.keys())[0]
+                        data = edge_data[key]
+                        
+                        if 'geometry' in data:
+                            coords = [(coord[1], coord[0]) for coord in data['geometry'].coords]
+                            folium.PolyLine(coords, weight=4, color='orange', opacity=0.9,
+                                           popup=f"Đường nối đến node liền kề").add_to(m)
+                        else:
+                            folium.PolyLine([[current_lat, current_lon], [adj_lat, adj_lon]], 
+                                           weight=4, color='orange', opacity=0.9,
+                                           popup=f"Đường nối đến node liền kề").add_to(m)
+    
     if points:
         if len(points) > 0:
             folium.Marker(points[0], popup='Điểm bắt đầu', icon=folium.Icon(color='green')).add_to(m)
@@ -550,13 +821,42 @@ if ban_mode_changed and not current_ban_by_circle_mode:
     for u, v, k, data in G.edges(data=True, keys=True):
         if 'banned_by_circle' in data:
             data['banned_by_circle'] = False
+
+# Hiển thị thông báo giới thiệu khi ứng dụng mới khởi động
+if 'app_first_run' not in st.session_state:
+    st.session_state.app_first_run = True
+    # Sử dụng info box để hiển thị thông tin phường Giảng Võ
+    st.info("""
+    **Chào mừng đến với Bản đồ chỉ đường Phường Giảng Võ - Ba Đình!**
+    
+    Bản đồ hiển thị khu vực Phường Giảng Võ với các tính năng:
+    - Tìm đường đi giữa hai điểm
+    - Cấm đường theo node, click hoặc vùng
+    
+    Để bắt đầu, hãy click vào bản đồ để chọn điểm bắt đầu và điểm kết thúc, hoặc sử dụng các tính năng cấm đường ở thanh bên trái.
+    """)
             
+# Lấy ranh giới phường Giảng Võ
 try:
-    gdf_districts = ox.geocode_to_gdf(places)
+    # Truy vấn cụ thể hơn cho phường Giảng Võ
+    gdf_districts = ox.geocode_to_gdf("Giảng Võ, Ba Đình, Hà Nội, Việt Nam")
     districts_polygon = gdf_districts.iloc[0]['geometry']
+    st.success("Đã tải ranh giới phường Giảng Võ thành công!")
 except Exception as e:
     st.error(f"Không thể tải polygon cho phường Giảng Võ: {e}")
     districts_polygon = None
+
+# Nếu polygon vẫn là None, thử cách khác
+if districts_polygon is None:
+    try:
+        # Tạo một polygon gần đúng cho khu vực Giảng Võ
+        center_point = Point(105.8232, 21.0286)  # Tọa độ trung tâm Hồ Giảng Võ
+        buffer_distance = 0.005  # Khoảng 500m
+        districts_polygon = center_point.buffer(buffer_distance)
+        st.warning("Sử dụng ranh giới ước lượng cho phường Giảng Võ")
+    except Exception as e:
+        st.error(f"Không thể tạo polygon ước lượng: {e}")
+        districts_polygon = None
 
 route = None
 m = create_map(
@@ -598,6 +898,19 @@ if len(st.session_state.points) == 2:
 
 map_data = st_folium(m, width=1200, height=600)
 
+# Thêm nút reset bản đồ để hiển thị toàn bộ phường Giảng Võ
+col1, col2 = st.columns([1, 5])
+with col1:
+    if st.button("Phóng bản đồ về Giảng Võ", key="reset_map_btn"):
+        # Xóa các điểm đã chọn
+        st.session_state.points = []
+        # Tắt các chế độ cấm
+        st.session_state.ban_by_node_mode = False
+        st.session_state.ban_by_click_mode = False
+        st.session_state.ban_by_circle_mode = False
+        # Làm mới bản đồ
+        st.rerun()
+
 if map_data and map_data['last_clicked']:
     lat = map_data['last_clicked']['lat']
     lon = map_data['last_clicked']['lng']
@@ -617,9 +930,76 @@ if map_data and map_data['last_clicked']:
         for u, v, k, data in G.edges(data=True, keys=True):
             if 'banned_by_circle' in data:
                 data['banned_by_circle'] = False
+    
+    # Xử lý khi bật chế độ cấm theo node
+    if st.session_state.get('ban_by_node_mode', False):
+        # Tìm node gần nhất với điểm click
+        nearest_node = ox.nearest_nodes(G, lon, lat)
+        
+        # Nếu chưa có node nào được chọn, thêm node đầu tiên
+        if not st.session_state.selected_nodes:
+            st.session_state.selected_nodes.append(nearest_node)
+            st.session_state.current_node = nearest_node
+            
+            # Tìm các node liền kề với node hiện tại
+            st.session_state.adjacent_nodes = list(G.neighbors(nearest_node))
+            # Loại bỏ các node đã chọn khỏi danh sách liền kề
+            st.session_state.adjacent_nodes = [n for n in st.session_state.adjacent_nodes if n not in st.session_state.selected_nodes]
+            
+            st.toast(f"Đã chọn node {nearest_node}. Chọn một node liền kề để tạo đường cấm.", icon="✅")
+            st.rerun()
+        else:
+            # Kiểm tra xem node vừa click có phải là node liền kề với node cuối cùng không
+            current_node = st.session_state.selected_nodes[-1]
+            
+            # Nếu click vào chính node hiện tại, không làm gì cả
+            if nearest_node == current_node:
+                st.toast("Bạn đã click vào node hiện tại. Hãy chọn một node liền kề.", icon="ℹ️")
+                st.rerun()
+            
+            # Nếu node vừa click nằm trong danh sách node liền kề
+            elif nearest_node in st.session_state.adjacent_nodes:
+                # Thêm node vào danh sách đã chọn
+                st.session_state.selected_nodes.append(nearest_node)
+                st.session_state.current_node = nearest_node
+                
+                # Cập nhật danh sách node liền kề mới
+                st.session_state.adjacent_nodes = list(G.neighbors(nearest_node))
+                # Loại bỏ các node đã chọn khỏi danh sách liền kề
+                st.session_state.adjacent_nodes = [n for n in st.session_state.adjacent_nodes if n not in st.session_state.selected_nodes]
+                
+                # Hiển thị thông báo với thông tin chi tiết
+                node_count = len(st.session_state.selected_nodes)
+                adjacent_count = len(st.session_state.adjacent_nodes)
+                
+                if adjacent_count > 0:
+                    st.toast(f"Đã chọn node {nearest_node}. Tổng cộng: {node_count} node. Có {adjacent_count} node liền kề khả dụng.", icon="✅")
+                else:
+                    st.toast(f"Đã chọn node {nearest_node}. Tổng cộng: {node_count} node. Không còn node liền kề khả dụng.", icon="⚠️")
+                
+                st.rerun()
+            else:
+                # Tìm node gần nhất trong danh sách các node liền kề
+                if st.session_state.adjacent_nodes:
+                    # Tính khoảng cách từ điểm click đến các node liền kề
+                    distances = []
+                    for adj_node in st.session_state.adjacent_nodes:
+                        adj_lat = G.nodes[adj_node]['y']
+                        adj_lon = G.nodes[adj_node]['x']
+                        dist = ((adj_lat - lat)**2 + (adj_lon - lon)**2)**0.5
+                        distances.append((adj_node, dist))
+                    
+                    # Sắp xếp theo khoảng cách và lấy node gần nhất
+                    distances.sort(key=lambda x: x[1])
+                    nearest_adj_node, nearest_dist = distances[0]
+                    
+                    st.toast(f"Node bạn chọn không liền kề. Node liền kề gần nhất là {nearest_adj_node}.", icon="❌")
+                else:
+                    st.toast("Node bạn chọn không liền kề và không còn node liền kề nào khả dụng.", icon="❌")
+                st.rerun()
 
     # Nếu bật chế độ cấm theo vùng tròn
-    if st.session_state.get('ban_by_circle_mode', False):
+    elif st.session_state.get('ban_by_circle_mode', False):
         radius = st.session_state.get('circle_ban_radius', 100)
         radius_deg = meters_to_degrees(radius)
         circle = clicked_point_geom.buffer(radius_deg)
@@ -652,6 +1032,32 @@ if map_data and map_data['last_clicked']:
         st.session_state.last_circle_ban_radius = radius
         st.success(f"Đã cấm {len(banned_osmids)} đoạn đường trong bán kính {radius} mét!")
         st.rerun()
+    # Xử lý chế độ cấm bằng click
+    elif st.session_state.get('ban_by_click_mode', False):
+        # Tìm đoạn đường gần nhất với điểm click
+        nearest_roads = find_nearest_roads(G, (lon, lat), num_roads=1, max_distance=0.001)
+        if nearest_roads:
+            road = nearest_roads[0]
+            data = road['data']
+            osmid = data.get('osmid')
+            name = data.get('name', 'Đường không tên')
+            if isinstance(name, list): name = name[0] if name else 'Đường không tên'
+            
+            # Lưu thông tin đoạn đường đang chờ xác nhận cấm
+            st.session_state.pending_ban_edge_info = {
+                'u': road['u'],
+                'v': road['v'],
+                'key': road['key'],
+                'osmid': osmid,
+                'name': name,
+                'geometry': data.get('geometry'),
+                'length': data.get('length', 0)
+            }
+            st.toast(f"Đã chọn đoạn: {name}. Xác nhận cấm ở sidebar.", icon="ℹ️")
+            st.rerun()
+        else:
+            st.toast("Không tìm thấy đoạn đường nào gần điểm bạn chọn.", icon="❌")
+            st.rerun()
     else:
         # Khi tắt chế độ cấm theo vùng, chỉ cho phép chọn điểm trong phường Giảng Võ
         if districts_polygon and districts_polygon.contains(clicked_point_geom):
